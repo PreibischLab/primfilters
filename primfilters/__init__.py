@@ -86,7 +86,7 @@ def hessian(im, g_sigma=3, scale_range=(1, 5)):
 	# Not implemented yet.
 	"""
 	im = gaussian(im, g_sigma)
-	return filter_2d_or_3d(filters.hessian, im)
+	return filter_2d_or_3d(filters.hessian, im, scale_range)
 
 
 def difference_of_gaussians(im, gaussians = [1,5]):
