@@ -10,6 +10,14 @@ import os
 # Still need to implement: 
 # For all filters dealing with a axes different pixel size
 
+def normalize(im):
+	"""
+	Image normalization (without histogram equalization)
+	"""
+	lmin = float(im.min())
+	lmax = float(im.max())
+	return np.floor((im-lmin)/(lmax-lmin)*255.)
+
 def filter_2d_or_3d(filter_fn, im, *args, **kwargs):
 	"""
 	This is a general function to apply 2D filters on 3D images where 3D is not implemented.
@@ -30,7 +38,8 @@ def gaussian(im, sigma=3):
 
 	Arguments:
 			im    - input image
-			sigma - std of the gaussian
+			sigma - std of the gaussian. when sigma is a sequence it's one for each axis 
+					IMPORTANT FOR DIFFERENT Z AXIS SIZE
 
 	For classifier - recommended multiple runs with sigma 1.0-16.0
 	"""
@@ -146,31 +155,55 @@ def membrane_projections(im):
 	return mempro_sum,mempro_mean,mempro_std,mempro_med,mempro_min,mempro_max
 
 
-"""
-All next filters - the targen pixel gets the value of the operation on the neigborhood
-Arguments:
-		im    	- 	input image
-		radius 	- 	neighborhood size
-"""
-def minimum(im, radius=5):
-	return ndimage.minimum_filter(im, radius)
+def minimum(im, win_size=5):
+	"""
+	The targen pixel gets the value of the minimum pixel in the neigborhood
+	Arguments:
+			im    	- 	input image
+			win_size 	- 	neighborhood size
+	"""
+	return ndimage.minimum_filter(im, win_size)
 
 
-def maximum(im, radius=5):
-	return ndimage.maximum_filter(im, radius)
+def maximum(im, win_size=5):
+	"""
+	The targen pixel gets the value of the maximum pixel in the neigborhood
+	Arguments:
+			im    	- 	input image
+			win_size 	- 	neighborhood size
+	"""
+	return ndimage.maximum_filter(im, win_size)
 
 
-def median(im, radius=5):
-	return ndimage.median_filter(im, radius)
+def median(im, win_size=5):
+	"""
+	The targen pixel gets the value of the median pixel in the neigborhood
+	Arguments:
+			im    	- 	input image
+			win_size 	- 	neighborhood size
+	"""
+	return ndimage.median_filter(im, win_size)
 
 
-def mean(im, radius=5):
-	return ndimage.uniform_filter(im, radius)
+def mean(im, win_size=5):
+	"""
+	The targen pixel gets the value of the mean of the neigborhood
+	Arguments:
+			im    	- 	input image
+			win_size 	- 	neighborhood size
+	"""
+	return ndimage.uniform_filter(im, win_size)
 
 
-def varience(im, radius=5):
-	mean = ndimage.uniform_filter(im, radius)
-	sqr_mean = ndimage.uniform_filter(im**2, radius)
+def varience(im, win_size=5):
+	"""
+	The targen pixel gets the value of the varience of the neigborhood
+	Arguments:
+			im    	- 	input image
+			win_size 	- 	neighborhood size
+	"""
+	mean = ndimage.uniform_filter(im, win_size)
+	sqr_mean = ndimage.uniform_filter(im**2, win_size)
 	return (sqr_mean - mean**2)
 
 
@@ -196,110 +229,89 @@ def anisotropic_diffusion2D(im, niter=20, kappa=50, gamma=0.1, step=(1.,1.), opt
 	im = im.astype('float32')
 	ann_diff = im.copy()
 
+	if im.ndim==2:
+		# initialize some internal variables
+		deltaS = np.zeros_like(ann_diff)
+		deltaE = deltaS.copy()
+		NS = deltaS.copy()
+		EW = deltaS.copy()
+		gS = np.ones_like(ann_diff)
+		gE = gS.copy()
+
+		for ii in range(niter):
+
+			# calculate the diffs
+			deltaS[:-1,: ] = np.diff(ann_diff,axis=0)
+			deltaE[: ,:-1] = np.diff(ann_diff,axis=1)
+
+			# conduction gradients (only need to compute one per dim!)
+			if option == 1:
+			    gS = np.exp(-(deltaS/kappa)**2.)/step[0]
+			    gE = np.exp(-(deltaE/kappa)**2.)/step[1]
+			elif option == 2:
+			    gS = 1./(1.+(deltaS/kappa)**2.)/step[0]
+			    gE = 1./(1.+(deltaE/kappa)**2.)/step[1]
+
+			# update matrices
+			E = gE*deltaE
+			S = gS*deltaS
+
+			# subtract a copy that has been shifted 'North/West' by one
+			# pixel. don't as questions. just do it. trust me.
+			NS[:] = S
+			EW[:] = E
+			NS[1:,:] -= S[:-1,:]
+			EW[:,1:] -= E[:,:-1]
+
+			# update the image
+			ann_diff += gamma*(NS+EW)
+	else:
 	# initialize some internal variables
-	deltaS = np.zeros_like(ann_diff)
-	deltaE = deltaS.copy()
-	NS = deltaS.copy()
-	EW = deltaS.copy()
-	gS = np.ones_like(ann_diff)
-	gE = gS.copy()
+		deltaS = np.zeros_like(ann_diff)
+		deltaE = deltaS.copy()
+		deltaD = deltaS.copy()
+		NS = deltaS.copy()
+		EW = deltaS.copy()
+		UD = deltaS.copy()
+		gS = np.ones_like(ann_diff)
+		gE = gS.copy()
+		gD = gS.copy()
 
-	for ii in range(niter):
+		for ii in range(niter):
 
-		# calculate the diffs
-		deltaS[:-1,: ] = np.diff(ann_diff,axis=0)
-		deltaE[: ,:-1] = np.diff(ann_diff,axis=1)
+			# calculate the diffs
+			deltaD[:-1,: ,:  ] = np.diff(ann_diff,axis=0)
+			deltaS[:  ,:-1,: ] = np.diff(ann_diff,axis=1)
+			deltaE[:  ,: ,:-1] = np.diff(ann_diff,axis=2)
 
-		# conduction gradients (only need to compute one per dim!)
-		if option == 1:
-		    gS = np.exp(-(deltaS/kappa)**2.)/step[0]
-		    gE = np.exp(-(deltaE/kappa)**2.)/step[1]
-		elif option == 2:
-		    gS = 1./(1.+(deltaS/kappa)**2.)/step[0]
-		    gE = 1./(1.+(deltaE/kappa)**2.)/step[1]
+			# conduction gradients (only need to compute one per dim!)
+			if option == 1:
+				gD = np.exp(-(deltaD/kappa)**2.)/step[0]
+				gS = np.exp(-(deltaS/kappa)**2.)/step[1]
+				gE = np.exp(-(deltaE/kappa)**2.)/step[2]
+			elif option == 2:
+				gD = 1./(1.+(deltaD/kappa)**2.)/step[0]
+				gS = 1./(1.+(deltaS/kappa)**2.)/step[1]
+				gE = 1./(1.+(deltaE/kappa)**2.)/step[2]
 
-		# update matrices
-		E = gE*deltaE
-		S = gS*deltaS
+			# update matrices
+			D = gD*deltaD
+			E = gE*deltaE
+			S = gS*deltaS
 
-		# subtract a copy that has been shifted 'North/West' by one
-		# pixel. don't as questions. just do it. trust me.
-		NS[:] = S
-		EW[:] = E
-		NS[1:,:] -= S[:-1,:]
-		EW[:,1:] -= E[:,:-1]
+			# subtract a copy that has been shifted 'Up/North/West' by one
+			# pixel. don't as questions. just do it. trust me.
+			UD[:] = D
+			NS[:] = S
+			EW[:] = E
+			UD[1:,: ,: ] -= D[:-1,:  ,:  ]
+			NS[: ,1:,: ] -= S[:  ,:-1,:  ]
+			EW[: ,: ,1:] -= E[:  ,:  ,:-1]
 
-		# update the image
-		ann_diff += gamma*(NS+EW)
+			# update the image
+			ann_diff += gamma*(UD+NS+EW)
 
 	return ann_diff
-    
-
-def anisotropic_diffusion3D(im, niter=20, kappa=50, gamma=0.1, step=(1.,1.,1.), option=1):
-	"""
-	A diffusion (blurring) that is applied only where the gradient is small
-	In fiji a1 = 0.1, 0.35, a2 = 0.9
-	Arguments:
-	    im  - input image
-	    niter  - number of iterations
-	    kappa  - conduction coefficient 20-100 ?
-	    gamma  - max value of .25 for stability
-	    step   - tuple, the distance between adjacent pixels in (z,y,x)
-	    option - 1 Perona Malik diffusion equation No 1
-	             2 Perona Malik diffusion equation No 2
-	Original MATLAB code by Peter Kovesi, translated to Python and optimised by Alistair Muldal
-	"""
-
-	# initialize output array
-	im = im.astype('float32')
-	ann_diff = im.copy()
-
-	# initialize some internal variables
-	deltaS = np.zeros_like(ann_diff)
-	deltaE = deltaS.copy()
-	deltaD = deltaS.copy()
-	NS = deltaS.copy()
-	EW = deltaS.copy()
-	UD = deltaS.copy()
-	gS = np.ones_like(ann_diff)
-	gE = gS.copy()
-	gD = gS.copy()
-
-	for ii in range(niter):
-
-		# calculate the diffs
-		deltaD[:-1,: ,:  ] = np.diff(ann_diff,axis=0)
-		deltaS[:  ,:-1,: ] = np.diff(ann_diff,axis=1)
-		deltaE[:  ,: ,:-1] = np.diff(ann_diff,axis=2)
-
-		# conduction gradients (only need to compute one per dim!)
-		if option == 1:
-			gD = np.exp(-(deltaD/kappa)**2.)/step[0]
-			gS = np.exp(-(deltaS/kappa)**2.)/step[1]
-			gE = np.exp(-(deltaE/kappa)**2.)/step[2]
-		elif option == 2:
-			gD = 1./(1.+(deltaD/kappa)**2.)/step[0]
-			gS = 1./(1.+(deltaS/kappa)**2.)/step[1]
-			gE = 1./(1.+(deltaE/kappa)**2.)/step[2]
-
-		# update matrices
-		D = gD*deltaD
-		E = gE*deltaE
-		S = gS*deltaS
-
-		# subtract a copy that has been shifted 'Up/North/West' by one
-		# pixel. don't as questions. just do it. trust me.
-		UD[:] = D
-		NS[:] = S
-		EW[:] = E
-		UD[1:,: ,: ] -= D[:-1,:  ,:  ]
-		NS[: ,1:,: ] -= S[:  ,:-1,:  ]
-		EW[: ,: ,1:] -= E[:  ,:  ,:-1]
-
-		# update the image
-		ann_diff += gamma*(UD+NS+EW)
-
-	return stackout
 
 
 def bilateral(im, win_size=5):
@@ -309,22 +321,22 @@ def bilateral(im, win_size=5):
 	Arguments:
 		im - input image
 	"""
-	return filter_2d_or_3d(restoration.denoise_bilateral, im, win_size=5, multichannel=False)
+	return filter_2d_or_3d(restoration.denoise_bilateral, im, win_size, multichannel=False)
 
 
-def kuwahara(im, radius=3):
+def kuwahara(im, win_size=3):
 	"""
 	Smoothing filter that preserves the edges
 	CURRENTLY COMPUTES BASED ON 2D (but input can be 3D)
 	LONG RUN!
 	Arguments:
 		im 		- input image
-		radius 	- the number of pixels taken from each side to create a neighborhood.
+		win_size 	- the number of pixels taken from each side to create a neighborhood.
 	"""
 	# Need to see if zeros is a good default of initialization - maybe nan?
 	kuwah = np.zeros(im.shape)
 	siz = im.shape
-	rad=radius
+	rad=win_size
 	if im.ndim==2:
 		for j in range(siz[0]):
 			for k in range(siz[1]):
@@ -370,7 +382,6 @@ def laplace(im, sigma):
 	Arguments:
 		im 		- input image
 		sigma 	- the std of the gaussian - if given as a sequence its the sigmas for each axis
-					IMPORTANT FOR DIFFERENT PIXEL SIZE PER AXIS
 	RETURNED IMAGE LOOKS LIKE AN OPERATOR WAS PERFORMED ONLY IN ONE DIRECTION - NEED TO CHECK
 	"""
 	return ndimage.gaussian_laplace(im, sigma)
