@@ -10,14 +10,6 @@ import os
 # Still need to implement: 
 # For all filters dealing with a axes different pixel size
 
-def normalize(im):
-	"""
-	Image normalization (without histogram equalization)
-	"""
-	lmin = float(im.min())
-	lmax = float(im.max())
-	return np.floor((im-lmin)/(lmax-lmin)*255.)
-
 def filter_2d_or_3d(filter_fn, im, *args, **kwargs):
 	"""
 	This is a general function to apply 2D filters on 3D images where 3D is not implemented.
@@ -46,59 +38,55 @@ def gaussian(im, sigma=3):
 	return ndimage.gaussian_filter(im, sigma)
 
 
-def sobel(im, sigma=3):
+def sobel(im):
 	"""
 	Edge detector using a Sobel filter
 	Input can be 3D but computes based on 2D (like in fiji WEKA)
 
 	Arguments:
 			im    - input image
-			sigma - std of the gaussian (gaussian is applied before sobel)
 
-	For classifier - recommended multiple runs with sigma 1.0-16.0
+	For classifier - recommended multiple runs after applying gaussian filter w sigma 1.0-16.0
 	"""
-	im = (gaussian(im, sigma)).astype('int32')
+	im = im.astype('int32')
 	sx = ndimage.sobel(im, axis=(im.ndim-2), mode='constant')
 	sy = ndimage.sobel(im, axis=(im.ndim-1), mode='constant')
 	return np.hypot(sx, sy)
 
 
-def prewitt(im, sigma=3):
+def prewitt(im):
 	"""
 	Edge detector using a Prewitt filter
 	LONG RUN!
 
 	Arguments:
 			im    - input image
-			sigma - std of the gaussian (gaussian is applied before sobel)
 
-	For classifier - recommended multiple runs with sigma 1.0-16.0
+	For classifier - recommended multiple runs after applying gaussian filter w sigma 1.0-16.0
 	"""
-	im = (gaussian(im, sigma)).astype('int32')
+	im = im.astype('int32')
 	sx = ndimage.prewitt(im, axis=(im.ndim-2), mode='constant')
 	sy = ndimage.prewitt(im, axis=(im.ndim-1), mode='constant')
 	return np.hypot(sx, sy)
 
 
-def hessian(im, g_sigma=3, scale_range=(1, 5)):
+def hessian(im, scale_range=(1, 5)):
 	"""
 	2nd order local image intensity variations - Hessian 
 	CURRENTLY COMPUTES BASED ON 2D (but input can be 3D)
 
 	Arguments:
 			im    		- 	input image
-			g_sigma 	- 	std of the gaussian (gaussian is applied before hassian)
 			scale_range -	the sigma range of the hessian filter (step size is set to 1)
 
-	For classifier - recommended multiple runs with sigma 1.0-16.0
+	For classifier - recommended multiple runs after applying gaussian filter w sigma 1.0-16.0
 	# Importantly in WEKA there are many methods of calculating the final value of a pixel from its hessian matrix.
 	# Not implemented yet.
 	"""
-	im = gaussian(im, g_sigma)
 	return filter_2d_or_3d(filters.hessian, im, scale_range)
 
 
-def difference_of_gaussians(im, gaussians = [1,5]):
+def difference_of_gaussians(im, gaussians = (1,5)):
 	"""
 	Feature enhancement - DoG
 	Arguments:
@@ -207,7 +195,7 @@ def varience(im, win_size=5):
 	return (sqr_mean - mean**2)
 
 
-def anisotropic_diffusion2D(im, niter=20, kappa=50, gamma=0.1, step=(1.,1.), option=1):
+def anisotropic_diffusion(im, niter=20, kappa=50, gamma=0.1, step=(1.,1.), option=1):
 	"""
 	A diffusion (blurring) that is applied only where the gradient is small
 	In fiji a1 = 0.1, 0.35, a2 = 0.9
@@ -266,6 +254,7 @@ def anisotropic_diffusion2D(im, niter=20, kappa=50, gamma=0.1, step=(1.,1.), opt
 			# update the image
 			ann_diff += gamma*(NS+EW)
 	else:
+		step=(1.,1.,1.)
 	# initialize some internal variables
 		deltaS = np.zeros_like(ann_diff)
 		deltaE = deltaS.copy()
@@ -363,7 +352,7 @@ def kuwahara(im, win_size=3):
 	return kuwah
 
 
-def gabor(im, frequency, theta):
+def gabor(im, frequency=0.1, theta=0):
 	"""
 	Texture filter - finds specific frequency content in a specific direction
 	CURRENTLY COMPUTES BASED ON 2D (but input can be 3D)
@@ -372,16 +361,23 @@ def gabor(im, frequency, theta):
 		frequency 	- the number of pixels taken from each side to create a neighborhood.
 		theta		- orientation in radians (angel of the gabor patch). Use values like: 0, np.pi/x
 	"""
-	gabo_real, gabo_imag = filter_2d_or_3d(filters.gabor, im, frequency, theta)
-	return gabo_real
+	if im.ndim==3:
+		f = np.zeros(im.shape)
+		f_temp = np.zeros(im.shape)
+		for i in range(im.shape[0]):
+			f[i], f_temp = filters.gabor(im[i], frequency, theta)
+	else:
+		f, f_temp = filters.gabor(im, frequency, theta)
+	return f
+#	gabo_real, gabo_imag = filter_2d_or_3d(filters.gabor, im, frequency, theta)
+#	return gabo_real
 
 
-def laplace(im, sigma):
+def laplace(im):
 	"""
 	Blob detector using the Laplacian of of gaussian (MAYBE FIJI WEKA USES ANOTHER LAPLACE - CHECK)
 	Arguments:
 		im 		- input image
-		sigma 	- the std of the gaussian - if given as a sequence its the sigmas for each axis
 	RETURNED IMAGE LOOKS LIKE AN OPERATOR WAS PERFORMED ONLY IN ONE DIRECTION - NEED TO CHECK
 	"""
 	return ndimage.gaussian_laplace(im, sigma)
@@ -445,4 +441,13 @@ def stats_filter(im, radius=3):
 					var[i,j] = np.var(neig_arr)
 
 	return mean, var
+"""
+
+"""
+def normalize(im):
+	#Image normalization (without histogram equalization)
+
+	lmin = float(im.min())
+	lmax = float(im.max())
+	return np.floor((im-lmin)/(lmax-lmin)*255.)
 """
