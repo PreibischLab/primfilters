@@ -1,5 +1,5 @@
 import numpy as np
-from skimage import io , feature, filters, restoration
+from skimage import feature, filters, restoration
 from skimage.filters.rank import entropy
 from skimage.morphology import disk
 from scipy import ndimage # For 3D filters
