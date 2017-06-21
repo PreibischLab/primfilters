@@ -10,7 +10,7 @@ setup(name='primfilters',
       packages=['primfilters'],
       install_requires=[
           'numpy',
-          'skimage',
+          'scikit-image',
           'scipy',
           'joblib'
       ]
